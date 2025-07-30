@@ -8,7 +8,9 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/user"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -107,6 +109,18 @@ func (c *Config) initConfigFromFile(path string) error {
 	if len(c.FrontendTLSJob) > 0 {
 		var outputs []FrontendTLSConfig
 		basePath := c.FrontendTLSJobBasePath()
+		owner, err := user.Lookup("root")
+		if err != nil {
+			return err
+		}
+		uid, _ := strconv.Atoi(owner.Uid)
+
+		group, err := user.LookupGroup("vcap")
+		if err != nil {
+			return err
+		}
+		gid, _ := strconv.Atoi(group.Gid)
+
 		for i, cert := range c.FrontendTLSJob {
 
 			name := strings.TrimSpace(cert.Name)
@@ -132,14 +146,20 @@ func (c *Config) initConfigFromFile(path string) error {
 			}
 
 			dirPath := filepath.Join(basePath, name)
-			os.MkdirAll(dirPath, 0755)
+			os.MkdirAll(dirPath, 0750)
 
 			certFilePath := filepath.Join(dirPath, fmt.Sprintf("%s.pem", name))
 			keyFilePath := filepath.Join(dirPath, fmt.Sprintf("%s.pem.key", name))
 
-			os.WriteFile(certFilePath, []byte(certChain), 0644)
+			os.WriteFile(certFilePath, []byte(certChain), 0640)
+			if err := os.Chown(certFilePath, uid, gid); err != nil {
+				return err
+			}
 
-			os.WriteFile(keyFilePath, []byte(privateKey), 0600)
+			os.WriteFile(keyFilePath, []byte(privateKey), 0640)
+			if err := os.Chown(keyFilePath, uid, gid); err != nil {
+				return err
+			}
 
 			outputs = append(outputs, FrontendTLSConfig{
 				Enabled:        true,
